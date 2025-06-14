@@ -9,7 +9,7 @@ function App() {
     <Router>
       <SidebarLayout>
         <Routes>
-          <Route path="/dashboard" element={<DashboardPage/>} />
+          <Route path="/" element={<DashboardPage/>} />
           <Route path="/products" element={<div>All Products</div>} />
           <Route path="/products/add" element={<div>Add Product</div>} />
           <Route
