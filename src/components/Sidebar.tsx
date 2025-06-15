@@ -23,7 +23,7 @@ export default function SidebarLayout({ children }: { children: React.ReactNode 
   const navItems = [
     {
       name: "Dashboard",
-      href: "/dashboard",
+      href: "/",
       icon: <LayoutDashboard className="w-5 h-5" />,
     },
     {
