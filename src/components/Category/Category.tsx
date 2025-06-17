@@ -1,4 +1,6 @@
-import { useState } from "react";
+"use client";
+
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,73 +23,95 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import {
+  getAllCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+} from "@/api/ProductCategory";
+import { toast } from "sonner";
 
+// Define Category type to match your API
 type Category = {
   _id: string;
   name: string;
-  description: string;
+  description?: string;
 };
 
 export default function CategoryTable() {
-  const [categories, setCategories] = useState<Category[]>([
-    {
-      _id: "1",
-      name: "Dark Chocolate",
-      description: "Rich and intense cocoa flavor",
-    },
-    {
-      _id: "2",
-      name: "Milk Chocolate",
-      description: "Smooth and creamy milk chocolate",
-    },
-  ]);
-
-  const [search, setSearch] = useState<string>("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [search, setSearch] = useState("");
   const [editMode, setEditMode] = useState<"create" | "edit" | null>(null);
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null);
-  const [form, setForm] = useState<{ name: string; description: string }>({
-    name: "",
-    description: "",
-  });
+  const [form, setForm] = useState({ name: "", description: "" });
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [openDialog, setOpenDialog] = useState(false);
 
-  const handleSave = () => {
-    if (editMode === "create") {
-      const newCategory: Category = {
-        _id: Date.now().toString(),
-        ...form,
-      };
-      setCategories((prev) => [...prev, newCategory]);
-    } else if (editMode === "edit" && currentCategory) {
-      setCategories((prev) =>
-        prev.map((cat) =>
-          cat._id === currentCategory._id ? { ...cat, ...form } : cat
-        )
-      );
+  // Fetch all categories from API
+  const fetchCategories = async () => {
+    try {
+      const cats = await getAllCategories(); // returns Category[]
+      setCategories(cats);
+    } catch {
+      toast.error("Failed to load categories");
     }
-
-    setEditMode(null);
-    setForm({ name: "", description: "" });
-    setCurrentCategory(null);
   };
 
-  const handleDelete = (id: string) => {
-    setCategories((prev) => prev.filter((cat) => cat._id !== id));
-    setDeleteId(null);
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  // Create or update category
+  const handleSave = async () => {
+    try {
+      if (editMode === "create") {
+        await createCategory(form);
+        toast.success("Category created");
+      } else if (editMode === "edit" && currentCategory) {
+        await updateCategory(currentCategory._id, form);
+        toast.success("Category updated");
+      }
+      // Reset form & refetch
+      setForm({ name: "", description: "" });
+      setEditMode(null);
+      setCurrentCategory(null);
+      setOpenDialog(false);
+      fetchCategories();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Operation failed");
+    }
   };
 
-  const openEditModal = (category: Category) => {
+  // Delete category
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteCategory(deleteId);
+      toast.success("Category deleted");
+      fetchCategories();
+    } catch {
+      toast.error("Delete failed");
+    } finally {
+      setDeleteId(null);
+    }
+  };
+
+  // Open dialog for edit
+  const openEditModal = (cat: Category) => {
     setEditMode("edit");
-    setCurrentCategory(category);
-    setForm({ name: category.name, description: category.description });
+    setCurrentCategory(cat);
+    setForm({ name: cat.name, description: cat.description || "" });
+    setOpenDialog(true);
   };
 
-  const filteredCategories = categories.filter((cat) =>
+  // Filter by search term
+  const filtered = categories.filter((cat) =>
     cat.name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
     <div className="p-6 bg-white rounded-lg shadow-md max-w-4xl mx-auto">
+      {/* Header: Search + Add Button */}
       <div className="flex justify-between items-center mb-4">
         <Input
           placeholder="Search category..."
@@ -95,9 +119,17 @@ export default function CategoryTable() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-64"
         />
-        <Dialog>
+        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
           <DialogTrigger asChild>
-            <Button onClick={() => setEditMode("create")}>Add Category</Button>
+            <Button
+              onClick={() => {
+                setEditMode("create");
+                setForm({ name: "", description: "" });
+                setCurrentCategory(null);
+              }}
+            >
+              Add Category
+            </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -133,6 +165,7 @@ export default function CategoryTable() {
         </Dialog>
       </div>
 
+      {/* Categories Table */}
       <table className="w-full border text-sm rounded overflow-hidden">
         <thead className="bg-muted text-left">
           <tr>
@@ -142,54 +175,19 @@ export default function CategoryTable() {
           </tr>
         </thead>
         <tbody>
-          {filteredCategories.length ? (
-            filteredCategories.map((cat) => (
+          {filtered.length > 0 ? (
+            filtered.map((cat) => (
               <tr key={cat._id} className="border-t hover:bg-gray-50">
                 <td className="p-2">{cat.name}</td>
                 <td className="p-2">{cat.description}</td>
                 <td className="p-2 text-center space-x-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditModal(cat)}
-                      >
-                        Edit
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Edit Category</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Name</Label>
-                          <Input
-                            value={form.name}
-                            onChange={(e) =>
-                              setForm({ ...form, name: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label>Description</Label>
-                          <Input
-                            value={form.description}
-                            onChange={(e) =>
-                              setForm({ ...form, description: e.target.value })
-                            }
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button variant="ghost">Cancel</Button>
-                        </DialogClose>
-                        <Button onClick={handleSave}>Save</Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEditModal(cat)}
+                  >
+                    Edit
+                  </Button>
 
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -208,12 +206,12 @@ export default function CategoryTable() {
                         </AlertDialogTitle>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setDeleteId(null)}>
+                        <AlertDialogCancel
+                          onClick={() => setDeleteId(null)}
+                        >
                           Cancel
                         </AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => deleteId && handleDelete(deleteId)}
-                        >
+                        <AlertDialogAction onClick={handleDelete}>
                           Delete
                         </AlertDialogAction>
                       </AlertDialogFooter>
@@ -224,7 +222,10 @@ export default function CategoryTable() {
             ))
           ) : (
             <tr>
-              <td colSpan={3} className="text-center p-4 text-muted-foreground">
+              <td
+                colSpan={3}
+                className="text-center p-4 text-muted-foreground"
+              >
                 No categories found.
               </td>
             </tr>

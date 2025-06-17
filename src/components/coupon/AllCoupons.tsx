@@ -1,4 +1,6 @@
-import { useState } from "react";
+"use client";
+
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,8 +26,16 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 
+import {
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
+  getAllCoupons,
+  toggleCouponStatus,
+} from "@/api/Coupons";
+
 type Coupon = {
-  id: string;
+  _id: string;
   code: string;
   discountType: "percentage" | "fixed";
   discountValue: number;
@@ -35,33 +45,11 @@ type Coupon = {
   isActive: boolean;
 };
 
-const mockCoupons: Coupon[] = [
-  {
-    id: "1",
-    code: "SAVE10",
-    discountType: "percentage",
-    discountValue: 10,
-    minOrderAmount: 50,
-    maxDiscount: 100,
-    expiresAt: "2025-12-31T00:00:00.000Z",
-    isActive: true,
-  },
-  {
-    id: "2",
-    code: "FLAT50",
-    discountType: "fixed",
-    discountValue: 50,
-    minOrderAmount: 100,
-    maxDiscount: null,
-    expiresAt: "2025-08-01T00:00:00.000Z",
-    isActive: false,
-  },
-];
-
 export default function CouponsTable() {
-  const [coupons, setCoupons] = useState<Coupon[]>(mockCoupons);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [openDialog, setOpenDialog] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
-  const [editForm, setEditForm] = useState<Omit<Coupon, "id">>({
+  const [form, setForm] = useState<Omit<Coupon, "_id">>({
     code: "",
     discountType: "percentage",
     discountValue: 0,
@@ -70,37 +58,21 @@ export default function CouponsTable() {
     expiresAt: "",
     isActive: false,
   });
+  const [deleteDialogId, setDeleteDialogId] = useState<string | null>(null);
 
-  const handleToggle = (id: string) => {
-    setCoupons((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c))
-    );
+  // Fetch coupons from API
+  const fetchCoupons = async () => {
+    const data = await getAllCoupons();
+    setCoupons(data);
   };
+  useEffect(() => {
+    fetchCoupons();
+  }, []);
 
-  const openEditDialog = (coupon: Coupon) => {
-    setSelectedCoupon(coupon);
-    setEditForm({ ...coupon });
-  };
-
-  const handleSave = () => {
-    if (!selectedCoupon) return;
-    setCoupons((prev) =>
-      prev.map((c) => (c.id === selectedCoupon.id ? { id: c.id, ...editForm } : c))
-    );
+  // Open create dialog
+  const openCreate = () => {
     setSelectedCoupon(null);
-  };
-
-  const handleDelete = (id: string) => {
-    setCoupons((prev) => prev.filter((c) => c.id !== id));
-  };
-
-  const handleCreate = () => {
-    const newCoupon: Coupon = {
-      id: Date.now().toString(),
-      ...editForm,
-    };
-    setCoupons((prev) => [newCoupon, ...prev]);
-    setEditForm({
+    setForm({
       code: "",
       discountType: "percentage",
       discountValue: 0,
@@ -109,125 +81,139 @@ export default function CouponsTable() {
       expiresAt: "",
       isActive: false,
     });
+    setOpenDialog(true);
+  };
+
+  // Open edit dialog
+  const openEdit = (c: Coupon) => {
+    setSelectedCoupon(c);
+    setForm({ ...c });
+    setOpenDialog(true);
+  };
+
+  // Save (create or update)
+  const handleSave = async () => {
+    if (selectedCoupon) {
+      await updateCoupon(selectedCoupon._id, form);
+    } else {
+      await createCoupon(form);
+    }
+    setOpenDialog(false);
+    fetchCoupons();
+  };
+
+  // Delete
+  const handleDelete = async () => {
+    if (!deleteDialogId) return;
+    await deleteCoupon(deleteDialogId);
+    setDeleteDialogId(null);
+    fetchCoupons();
+  };
+
+  // Toggle active
+  const handleToggle = async (id: string) => {
+    await toggleCouponStatus(id);
+    fetchCoupons();
   };
 
   return (
     <div className="p-4">
+      {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-semibold">All Coupons</h2>
-        {/* Create Coupon Button */}
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button onClick={() => setEditForm({
-              code: "",
-              discountType: "percentage",
-              discountValue: 0,
-              minOrderAmount: 0,
-              maxDiscount: null,
-              expiresAt: "",
-              isActive: false
-            })}>
-              Create Coupon
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Coupon</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div>
-                <Label>Code</Label>
-                <Input
-                  value={editForm.code}
-                  onChange={(e) => setEditForm((f) => ({ ...f, code: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Discount Type</Label>
-                <select
-                  className="w-full border rounded p-2"
-                  value={editForm.discountType}
-                  onChange={(e) =>
-                    setEditForm((f) => ({
-                      ...f,
-                      discountType: e.target.value as "percentage" | "fixed",
-                    }))
-                  }
-                >
-                  <option value="percentage">Percentage</option>
-                  <option value="fixed">Fixed</option>
-                </select>
-              </div>
-              <div>
-                <Label>Discount Value</Label>
-                <Input
-                  type="number"
-                  value={editForm.discountValue}
-                  onChange={(e) =>
-                    setEditForm((f) => ({
-                      ...f,
-                      discountValue: Number(e.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Min Order Amount</Label>
-                <Input
-                  type="number"
-                  value={editForm.minOrderAmount}
-                  onChange={(e) =>
-                    setEditForm((f) => ({
-                      ...f,
-                      minOrderAmount: Number(e.target.value),
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Max Discount</Label>
-                <Input
-                  type="number"
-                  value={editForm.maxDiscount ?? ""}
-                  onChange={(e) =>
-                    setEditForm((f) => ({
-                      ...f,
-                      maxDiscount: e.target.value ? Number(e.target.value) : null,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Expires At</Label>
-                <Input
-                  type="date"
-                  value={editForm.expiresAt.slice(0, 10)}
-                  onChange={(e) =>
-                    setEditForm((f) => ({ ...f, expiresAt: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={editForm.isActive}
-                  onCheckedChange={(val) =>
-                    setEditForm((f) => ({ ...f, isActive: val }))
-                  }
-                />
-                <Label>{editForm.isActive ? "Active" : "Inactive"}</Label>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="ghost">Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleCreate}>Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={openCreate}>Create Coupon</Button>
       </div>
 
-      {/* Coupon Table */}
+      {/* Create / Edit Dialog */}
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedCoupon ? "Edit" : "Create"} Coupon</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label>Code</Label>
+              <Input
+                value={form.code}
+                onChange={(e) => setForm(f => ({ ...f, code: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Discount Type</Label>
+              <select
+                className="w-full border rounded p-2"
+                value={form.discountType}
+                onChange={(e) =>
+                  setForm(f => ({ ...f, discountType: e.target.value as any }))
+                }
+              >
+                <option value="percentage">Percentage</option>
+                <option value="fixed">Fixed</option>
+              </select>
+            </div>
+            <div>
+              <Label>Discount Value</Label>
+              <Input
+                type="number"
+                value={form.discountValue}
+                onChange={(e) =>
+                  setForm(f => ({ ...f, discountValue: Number(e.target.value) }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Min Order Amount</Label>
+              <Input
+                type="number"
+                value={form.minOrderAmount}
+                onChange={(e) =>
+                  setForm(f => ({ ...f, minOrderAmount: Number(e.target.value) }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Max Discount</Label>
+              <Input
+                type="number"
+                value={form.maxDiscount ?? ""}
+                onChange={(e) =>
+                  setForm(f => ({
+                    ...f,
+                    maxDiscount: e.target.value ? Number(e.target.value) : null,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Expires At</Label>
+              <Input
+                type="date"
+                value={form.expiresAt?.slice(0, 10)}
+                onChange={(e) =>
+                  setForm(f => ({ ...f, expiresAt: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={form.isActive}
+                onCheckedChange={(val) =>
+                  setForm(f => ({ ...f, isActive: val }))
+                }
+              />
+              <Label>{form.isActive ? "Active" : "Inactive"}</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+            <Button onClick={handleSave}>{selectedCoupon ? "Save" : "Create"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Coupons Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left border">
           <thead className="bg-muted">
@@ -243,18 +229,18 @@ export default function CouponsTable() {
             </tr>
           </thead>
           <tbody>
-            {coupons.map((coupon) => (
-              <tr key={coupon.id} className="hover:bg-accent">
+            {coupons.map(coupon => (
+              <tr key={coupon._id} className="hover:bg-accent">
                 <td className="p-3 border font-medium">{coupon.code}</td>
                 <td className="p-3 border capitalize">{coupon.discountType}</td>
                 <td className="p-3 border">
                   {coupon.discountType === "percentage"
                     ? `${coupon.discountValue}%`
-                    : `$${coupon.discountValue}`}
+                    : `Rs. ${coupon.discountValue}`}
                 </td>
-                <td className="p-3 border">${coupon.minOrderAmount}</td>
+                <td className="p-3 border">Rs. {coupon.minOrderAmount}</td>
                 <td className="p-3 border">
-                  {coupon.maxDiscount !== null ? `$${coupon.maxDiscount}` : "—"}
+                  {coupon.maxDiscount != null ? `Rs. ${coupon.maxDiscount}` : "—"}
                 </td>
                 <td className="p-3 border">
                   {format(new Date(coupon.expiresAt), "PPP")}
@@ -263,60 +249,44 @@ export default function CouponsTable() {
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={coupon.isActive}
-                      onCheckedChange={() => handleToggle(coupon.id)}
-                      id={`switch-${coupon.id}`}
+                      onCheckedChange={() => handleToggle(coupon._id)}
+                      id={`switch-${coupon._id}`}
                     />
-                    <Label htmlFor={`switch-${coupon.id}`}>
+                    <Label htmlFor={`switch-${coupon._id}`}>
                       {coupon.isActive ? "Active" : "Inactive"}
                     </Label>
                   </div>
                 </td>
                 <td className="p-3 border text-center space-x-2">
-                  {/* Edit Dialog */}
-                  <Dialog>
-                    <DialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openEdit(coupon)}
+                  >
+                    Edit
+                  </Button>
+
+                  <AlertDialog open={deleteDialogId === coupon._id} onOpenChange={open => {
+                    if (!open) setDeleteDialogId(null);
+                  }}>
+                    <AlertDialogTrigger asChild>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => openEditDialog(coupon)}
+                        variant="destructive"
+                        onClick={() => setDeleteDialogId(coupon._id)}
                       >
-                        Edit
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Edit Coupon</DialogTitle>
-                      </DialogHeader>
-                      {/* Same form used above */}
-                      {/* ... */}
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button variant="ghost">Cancel</Button>
-                        </DialogClose>
-                        <Button onClick={handleSave}>Save</Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-
-                  {/* Delete Confirmation */}
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="destructive">
                         Delete
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Are you sure you want to delete this coupon?
-                        </AlertDialogTitle>
+                        <AlertDialogTitle>Delete this coupon?</AlertDialogTitle>
                       </AlertDialogHeader>
-                      <p>This action cannot be undone.</p>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDelete(coupon.id)}
-                        >
+                        <AlertDialogCancel onClick={() => setDeleteDialogId(null)}>
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete}>
                           Delete
                         </AlertDialogAction>
                       </AlertDialogFooter>
